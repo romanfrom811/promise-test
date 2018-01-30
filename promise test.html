@@ -45,23 +45,31 @@
 
             _runAllJobs() {
                 const jobRunnersQueue = this.jobs.map(this._getJobRunner);
-                let currentJobs = jobRunnersQueue.splice(0, this.parallelJobsCount).map(jr => jr());
+                let currentJobs = jobRunnersQueue
+                    .splice(0, this.parallelJobsCount)
+                    .map(jr => jr());
 
                 return new Promise((resolve, reject) => {
                     const handleJobFinish = finishedJob => {
-                        currentJobs = currentJobs.filter(jr => jr.job !== finishedJob);
+                        currentJobs = currentJobs.filter(j => j.job !== finishedJob);
                         if (jobRunnersQueue.length) {
                             const newJobRunner = jobRunnersQueue.shift();
                             currentJobs.push(newJobRunner());
                         }
+
                         if (currentJobs.length) {
-                            Promise.race(currentJobs.map(jr => jr.promise)).then(handleJobFinish).catch(err => reject(err));
+                            waitForFinishedJob();
                         } else {
                             resolve();
                         }
                     }
 
-                    Promise.race(currentJobs.map(jr => jr.promise)).then(handleJobFinish).catch(err => reject(err));
+                    const waitForFinishedJob = () => Promise
+                        .race(currentJobs.map(jr => jr.promise))
+                        .then(handleJobFinish)
+                        .catch(err => reject(err));
+
+                    waitForFinishedJob();
                 });
             }
 
