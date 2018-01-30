@@ -33,49 +33,51 @@
                     throw new Error('Done callback should be a function');
                 }
 
-                this._runAllJobs().then(() => {
-                    const results = this.jobs.map(j => j.result);
-                    this.jobs = [];
-                    callback(results);
-                });
+                this._runAllJobs()
+                    .then(() => {
+                        const results = this.jobs.map(j => j.result);
+                        this.jobs = [];
+                        callback(results);
+                    })
+                    .catch(err => console.error(err));
             }
 
 
             _runAllJobs() {
-                const jobPromises = [];
-                const jobsArrayCopy = this.jobs.slice();
+                const jobRunnersQueue = this.jobs.map(this._getJobRunner);
+                let currentJobs = jobRunnersQueue.splice(0, this.parallelJobsCount).map(jr => jr());
 
-                while(jobsArrayCopy.length) {
-                    const bunchOfJobs = jobsArrayCopy.slice(0, this.parallelJobsCount);
-                    jobsArrayCopy.splice(0, bunchOfJobs.length);
-
-                    jobPromises.push(this._runBunchOfJobs(bunchOfJobs));
-                }
-
-                return Promise.all(jobPromises);
-            }
-
-            _runBunchOfJobs(jobs) {
-                const bunchPromises = [];
-
-                for (let job of jobs) {
-                    const jobPromise = this._createJobPromise(job);
-                    bunchPromises.push(jobPromise);
-                }
-
-                return Promise.all(bunchPromises);
-            }
-
-            _createJobPromise(job) {
                 return new Promise((resolve, reject) => {
-                    try {
-                        job.callback(result => {
-                            job.result = result;
+                    const handleJobFinish = finishedJob => {
+                        currentJobs = currentJobs.filter(jr => jr.job !== finishedJob);
+                        if (jobRunnersQueue.length) {
+                            const newJobRunner = jobRunnersQueue.shift();
+                            currentJobs.push(newJobRunner());
+                        }
+                        if (currentJobs.length) {
+                            Promise.race(currentJobs.map(jr => jr.promise)).then(handleJobFinish).catch(err => reject(err));
+                        } else {
                             resolve();
-                        });
-                    } catch(err) {
-                        reject(err);
+                        }
                     }
+
+                    Promise.race(currentJobs.map(jr => jr.promise)).then(handleJobFinish).catch(err => reject(err));
+                });
+            }
+
+            _getJobRunner(job) {
+                return () => ({
+                    job,
+                    promise: new Promise((resolve, reject) => {
+                        try {
+                            job.callback(result => {
+                                job.result = result;
+                                resolve(job);
+                            });
+                        } catch(err) {
+                            reject(err);
+                        }
+                    })
                 });
             }
         }
