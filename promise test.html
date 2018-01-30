@@ -13,6 +13,73 @@
         * to be compiled and executed without exceptions and assertions.
         */
 
+        class Parallel {
+            constructor({ parallelJobs }) {
+                this.parallelJobsCount = parallelJobs;
+                this.jobs = [];
+            }
+
+            job(callback) {
+                if (typeof(callback) !== 'function') {
+                    throw new Error('Job callback should be a function');
+                }
+
+                this.jobs.push({ callback, result: null });
+                return this;
+            }
+
+            done(callback) {
+                if (typeof(callback) !== 'function') {
+                    throw new Error('Done callback should be a function');
+                }
+
+                this._runAllJobs().then(() => {
+                    const results = this.jobs.map(j => j.result);
+                    this.jobs = [];
+                    callback(results);
+                });
+            }
+
+
+            _runAllJobs() {
+                const jobPromises = [];
+                const jobsArrayCopy = this.jobs.slice();
+
+                while(jobsArrayCopy.length) {
+                    const bunchOfJobs = jobsArrayCopy.slice(0, this.parallelJobsCount);
+                    jobsArrayCopy.splice(0, bunchOfJobs.length);
+
+                    jobPromises.push(this._runBunchOfJobs(bunchOfJobs));
+                }
+
+                return Promise.all(jobPromises);
+            }
+
+            _runBunchOfJobs(jobs) {
+                const bunchPromises = [];
+
+                for (let job of jobs) {
+                    const jobPromise = this._createJobPromise(job);
+                    bunchPromises.push(jobPromise);
+                }
+
+                return Promise.all(bunchPromises);
+            }
+
+            _createJobPromise(job) {
+                return new Promise((resolve, reject) => {
+                    try {
+                        job.callback(result => {
+                            job.result = result;
+                            resolve();
+                        });
+                    } catch(err) {
+                        reject(err);
+                    }
+                });
+            }
+        }
+
     </script>
     <script>
         /************************************************
